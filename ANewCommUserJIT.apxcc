@@ -1,0 +1,188 @@
+//This class provides logic for inbound just-in-time provisioning of single sign-on users in your Salesforce organization.
+global class ANewCommUserJIT implements Auth.SamlJitHandler {
+    private class JitException extends Exception{}
+    private void handleUser(boolean create, User u, Map<String, String> attributes,
+        String federationIdentifier, boolean isStandard) {
+        if(create && attributes.containsKey('User.Username')) {
+            u.Username = attributes.get('User.Username');
+        }
+        if(create) {
+            if(attributes.containsKey('User.FederationIdentifier')) {
+                u.FederationIdentifier = attributes.get('User.FederationIdentifier');
+            } else {
+                u.FederationIdentifier = federationIdentifier;
+            }
+        }
+        if(attributes.containsKey('User.Email')) {
+            u.Email = attributes.get('User.Email');
+        }
+        if(attributes.containsKey('User.FirstName')) {
+            u.FirstName = attributes.get('User.FirstName');
+        }
+        if(attributes.containsKey('User.LastName')) {
+            u.LastName = attributes.get('User.LastName');
+        }
+            
+        if(attributes.containsKey('User.CommunityNickname')) {
+            u.CommunityNickname = attributes.get('User.CommunityNickname');
+        }
+       
+        String uid = UserInfo.getUserId();
+        User currentUser = 
+            [SELECT LocaleSidKey, LanguageLocaleKey, TimeZoneSidKey, EmailEncodingKey FROM User WHERE Id=:uid];
+         if(create) {
+            u.LocaleSidKey = currentUser.LocaleSidKey;
+        }
+        if(create) {
+            u.LanguageLocaleKey = currentUser.LanguageLocaleKey;
+        }
+        if(create) {
+            String alias = '';
+            if(u.FirstName == null) {
+                alias = u.LastName;
+            } else {
+                alias = u.FirstName.charAt(0) + u.LastName;
+            }
+            if(alias.length() > 5) {
+                alias = alias.substring(0, 5);
+            }
+            u.Alias = alias;
+        }
+        if(create) {
+            u.TimeZoneSidKey = currentUser.TimeZoneSidKey;
+        }
+       if(create) {
+            u.EmailEncodingKey = currentUser.EmailEncodingKey;
+        }
+
+       
+        if(attributes.containsKey('User.ProfileId')) {
+            // String profileId = attributes.get('User.ProfileId');
+            // Profile p = [SELECT Id FROM Profile WHERE Id=:profileId];
+            String profilename = attributes.get('User.ProfileId');
+            Profile p = [SELECT Id FROM Profile WHERE name=:profilename];
+            u.ProfileId = p.Id;
+        }
+      
+          if(!create) {
+            update(u);
+        }
+    }
+
+    private void handleContact(boolean create, String accountId, User u, Map<String, String> attributes) {
+        Contact c;
+        boolean newContact = false;
+        if(create) {
+            if(attributes.containsKey('User.Contact')) {
+            String contact = attributes.get('User.Contact');
+                c = [SELECT Id, AccountId FROM Contact WHERE Id=:contact];
+                u.ContactId = contact;
+            } else {
+                c = new Contact();
+                newContact = true;
+            }
+        } else {
+            if(attributes.containsKey('User.Contact')) {
+                String contact = attributes.get('User.Contact');
+                c = [SELECT Id, AccountId FROM Contact WHERE Id=:contact];
+            } else {
+                String contact = u.ContactId;
+                c = [SELECT Id, AccountId FROM Contact WHERE Id=:contact];
+            }
+        }
+       
+        if(attributes.containsKey('Contact.Email')) {
+            c.Email = attributes.get('Contact.Email');
+        }
+        if(attributes.containsKey('Contact.FirstName')) {
+            c.FirstName = attributes.get('Contact.FirstName');
+        }
+        if(attributes.containsKey('Contact.LastName')) {
+            c.LastName = attributes.get('Contact.LastName');
+        }
+        if(newContact) {
+            c.AccountId = accountId;
+            insert(c);
+            u.ContactId = c.Id;
+        } else {
+            update(c);
+        }
+    }
+
+    private String handleAccount(boolean create, User u, Map<String, String> attributes) {
+        Account a;
+        boolean newAccount = false;
+        if(create) {
+            if(attributes.containsKey('User.Account')) {
+                String account = attributes.get('User.Account');
+                a = [SELECT Id FROM Account WHERE Id=:account];
+            } else {
+                if(attributes.containsKey('User.Contact')) {
+                    String contact = attributes.get('User.Contact');
+                    Contact c = [SELECT AccountId FROM Contact WHERE Id=:contact];
+                    String account = c.AccountId;
+                    a = [SELECT Id FROM Account WHERE Id=:account];
+                } else {
+                    a = new Account();
+                    newAccount = true;
+                }
+            }
+        } else {
+            // if(attributes.containsKey('User.Account')) {
+            // String account = attributes.get('User.Account');
+            //    a = [SELECT Id FROM Account WHERE Id=:account];
+                 if(attributes.containsKey('Account.Name')) {
+                String account = attributes.get('Account.Name');
+                    a = [SELECT Id FROM Account WHERE name=:account];
+                          
+            } else {
+                if(attributes.containsKey('User.Contact')) {
+                    String contact = attributes.get('User.Contact');
+                    Contact c = [SELECT Id, AccountId FROM Contact WHERE Id=:contact];
+                    String account = c.AccountId;
+                    a = [SELECT Id FROM Account WHERE Id=:account];
+                } 
+            }
+        }
+        if(attributes.containsKey('Account.Name')) {
+            a.Name = attributes.get('Account.Name');
+        }
+        if(attributes.containsKey('Account.AccountNumber')) {
+            a.AccountNumber = attributes.get('Account.AccountNumber');
+        }
+        
+        if(newAccount) {
+            insert(a);
+        } else {
+            update(a);
+        }
+        return a.Id;
+    }
+
+    private void handleJit(boolean create, User u, Id samlSsoProviderId, Id communityId, Id portalId,
+        String federationIdentifier, Map<String, String> attributes, String assertion) {
+        if(communityId != null || portalId != null) {
+           String account = handleAccount(create, u, attributes);
+           // String account = handleAccount(false, u, attributes);
+            handleContact(create, account, u, attributes);
+            handleUser(create, u, attributes, federationIdentifier, false);
+        } else {
+            handleUser(create, u, attributes, federationIdentifier, true);
+        }
+    }
+
+    global User createUser(Id samlSsoProviderId, Id communityId, Id portalId,
+        String federationIdentifier, Map<String, String> attributes, String assertion) {
+        User u = new User();
+        handleJit(true, u, samlSsoProviderId, communityId, portalId,
+            federationIdentifier, attributes, assertion);
+        return u;
+    }
+
+    global void updateUser(Id userId, Id samlSsoProviderId, Id communityId, Id portalId,
+        String federationIdentifier, Map<String, String> attributes, String assertion) {
+        User u = [SELECT Id, FirstName, ContactId FROM User WHERE Id=:userId];
+        handleJit(false, u, samlSsoProviderId, communityId, portalId,
+            federationIdentifier, attributes, assertion);
+    }
+}
