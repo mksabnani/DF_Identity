@@ -1,3 +1,6 @@
+//This class provides logic for generating a random string for FedID used by just-in-time provisioning of single sign-on users in your Salesforce organization.
+
+
 global class EnterFedID
 {    
     public static String generateRandomString(Integer len) {
