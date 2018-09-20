@@ -1,0 +1,5 @@
+trigger AddFedID on User (before insert) {    
+    for (User u : Trigger.new) {
+        u.FederationIdentifier = EnterFedID.generateRandomString(5);
+    }
+}
