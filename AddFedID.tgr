@@ -1,3 +1,5 @@
+//This apex trigger logic populates FedID in user record for just-in-time provisioning of single sign-on users in your Salesforce organization.
+
 trigger AddFedID on User (before insert) {    
     for (User u : Trigger.new) {
         u.FederationIdentifier = EnterFedID.generateRandomString(5);
