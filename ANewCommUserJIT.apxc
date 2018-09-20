@@ -1,4 +1,6 @@
 //This class provides logic for inbound just-in-time provisioning of single sign-on users in your Salesforce organization.
+
+
 global class ANewCommUserJIT implements Auth.SamlJitHandler {
     private class JitException extends Exception{}
     private void handleUser(boolean create, User u, Map<String, String> attributes,
